@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext.js';
+import { Translate } from '../context/LanguageContext.js';
 import { Scheme } from '../types.js';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -23,9 +24,10 @@ interface DashboardProps {
   onExplore: () => void;
   onEditProfile: () => void;
   onViewEligibility: () => void;
+  currentLanguage?: string;
 }
 
-export default function Dashboard({ onExplore, onEditProfile, onViewEligibility }: DashboardProps) {
+export default function Dashboard({ onExplore, onEditProfile, onViewEligibility, currentLanguage = 'English' }: DashboardProps) {
   const { user, token, applications, documents } = useAuth();
   const [eligSchemes, setEligSchemes] = useState<any[]>([]);
   const [savedSchemes, setSavedSchemes] = useState<Scheme[]>([]);
@@ -103,15 +105,15 @@ export default function Dashboard({ onExplore, onEditProfile, onViewEligibility 
       {/* Title greeting section */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800 pb-5">
         <div>
-          <h2 className="font-display text-xl font-bold text-white">Jai Hind, {user?.fullName}!</h2>
-          <p className="text-xs text-slate-400">Citizen welfare dashboard and live tracking portal</p>
+          <h2 className="font-display text-xl font-bold text-white"><Translate>Welcome back</Translate>, {user?.fullName}!</h2>
+          <p className="text-xs text-slate-400"><Translate>Your personalized welfare match, credential readiness, and active applications.</Translate></p>
         </div>
         <button
           onClick={onEditProfile}
           className="mt-3 sm:mt-0 flex items-center space-x-1.5 rounded-xl border border-slate-800 bg-slate-950 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-900 transition"
         >
           <Edit3 className="h-3.5 w-3.5 text-amber-400" />
-          <span>Edit Profile Details</span>
+          <span><Translate>Profile Setup</Translate></span>
         </button>
       </div>
 
@@ -119,7 +121,7 @@ export default function Dashboard({ onExplore, onEditProfile, onViewEligibility 
       <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6 backdrop-blur-md grid gap-6 md:grid-cols-3 items-center">
         <div className="md:col-span-2 space-y-4">
           <div className="flex justify-between items-center text-xs">
-            <span className="font-semibold text-slate-300">Welfare Credentials Index Complete</span>
+            <span className="font-semibold text-slate-300"><Translate>Welfare Eligibility Scanner</Translate></span>
             <span className="font-bold text-amber-400">{completionPercent}%</span>
           </div>
           <div className="w-full bg-slate-950 rounded-full h-3 overflow-hidden border border-slate-900">
@@ -130,8 +132,8 @@ export default function Dashboard({ onExplore, onEditProfile, onViewEligibility 
           </div>
           <p className="text-[11px] text-slate-400 leading-relaxed">
             {completionPercent === 100 
-              ? "Excellent! Your credential profile is 100% complete. BharatAssist AI is actively calculating matching welfare programs with maximum precision."
-              : "Complete your profile metrics (District, category, disability, etc.) to allow BharatAssist AI to search and suggest targeted programs."}
+              ? <Translate>Excellent! Your credential profile is 100% complete. BharatAssist AI is actively calculating matching welfare programs with maximum precision.</Translate>
+              : <Translate>Discover matching welfare options, verify required documents securely using AI OCR, and chat in native regional languages.</Translate>}
           </p>
         </div>
         
@@ -141,13 +143,13 @@ export default function Dashboard({ onExplore, onEditProfile, onViewEligibility 
               onClick={onEditProfile}
               className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-xs font-bold text-slate-950 hover:from-amber-400 hover:to-orange-400 transition shadow-md"
             >
-              Complete setup (Unlock Matches)
+              <Translate>Complete setup (Unlock Matches)</Translate>
             </button>
           ) : (
             <div className="text-center">
               <CheckCircle className="h-8 w-8 text-emerald-400 mx-auto mb-2" />
-              <p className="text-xs font-bold text-white">Profile Verified</p>
-              <p className="text-[10px] text-emerald-400 font-medium">Automatic Matching Engine Active</p>
+              <p className="text-xs font-bold text-white"><Translate>Qualifications Check</Translate></p>
+              <p className="text-[10px] text-emerald-400 font-medium"><Translate>Automatic Matching Engine Active</Translate></p>
             </div>
           )}
         </div>

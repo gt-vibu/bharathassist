@@ -27,12 +27,15 @@ import {
   CheckCircle2
 } from 'lucide-react';
 
+import { LanguageProvider, useTranslation, Translate } from './context/LanguageContext.js';
+
 function AppContent() {
-  const { user, signup, verifyOtp, login, forgotPassword, resetPassword } = useAuth();
+  const { user, signup, verifyOtp, verifyMobileOtp, resendMobileOtp, login, forgotPassword, resetPassword } = useAuth();
+  const { currentLanguage, setLanguage } = useTranslation();
   
   const [activeTab, setActiveTab] = useState('home');
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [authMode, setAuthMode] = useState<'login' | 'signup' | 'verify-otp' | 'forgot' | 'reset-password'>('login');
+  const [authMode, setAuthMode] = useState<'login' | 'signup' | 'verify-otp' | 'forgot' | 'reset-password' | 'verify-mobile-otp'>('login');
   
   // Auth Form parameters
   const [authEmail, setAuthEmail] = useState('');
@@ -43,6 +46,87 @@ function AppContent() {
   const [authRemember, setAuthRemember] = useState(true);
   const [authFeedback, setAuthFeedback] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
+
+  // Mobile verification interactive states
+  const [verificationPhone, setVerificationPhone] = useState('');
+  const [otpDigits, setOtpDigits] = useState<string[]>(Array(6).fill(''));
+  const [timer, setTimer] = useState(60);
+  const [attemptsLeft, setAttemptsLeft] = useState(5);
+  const [simulatedOtp, setSimulatedOtp] = useState('');
+  const inputRefs = React.useRef<(HTMLInputElement | null)[]>([]);
+
+  React.useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+    if (authMode === 'verify-mobile-otp' && timer > 0) {
+      interval = setInterval(() => {
+        setTimer((prev) => prev - 1);
+      }, 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [authMode, timer]);
+
+  const handleChange = (index: number, val: string) => {
+    const numOnly = val.replace(/[^0-9]/g, '');
+    if (!numOnly) {
+      const newDigits = [...otpDigits];
+      newDigits[index] = '';
+      setOtpDigits(newDigits);
+      return;
+    }
+    const char = numOnly.slice(-1);
+    const newDigits = [...otpDigits];
+    newDigits[index] = char;
+    setOtpDigits(newDigits);
+
+    // Auto focus next input box
+    if (index < 5 && char) {
+      inputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace') {
+      if (!otpDigits[index] && index > 0) {
+        const newDigits = [...otpDigits];
+        newDigits[index - 1] = '';
+        setOtpDigits(newDigits);
+        inputRefs.current[index - 1]?.focus();
+      } else {
+        const newDigits = [...otpDigits];
+        newDigits[index] = '';
+        setOtpDigits(newDigits);
+      }
+    }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    const pasteData = e.clipboardData.getData('text').trim();
+    if (/^\d{6}$/.test(pasteData)) {
+      const chars = pasteData.split('');
+      setOtpDigits(chars);
+      inputRefs.current[5]?.focus();
+    }
+  };
+
+  const handleResendOtp = async () => {
+    try {
+      setAuthLoading(true);
+      setAuthFeedback('');
+      const res = await resendMobileOtp(verificationPhone);
+      setTimer(60);
+      setOtpDigits(Array(6).fill(''));
+      setAttemptsLeft(5);
+      setSimulatedOtp(res.otpSimulated || '');
+      setAuthFeedback("A secure 6-digit verification code has been dispatched. Simulated OTP: " + res.otpSimulated);
+    } catch (err: any) {
+      setAuthFeedback(err.message || "Failed to resend OTP code.");
+    } finally {
+      setAuthLoading(false);
+    }
+  };
 
   // Contact form state
   const [contactName, setContactName] = useState('');
@@ -63,26 +147,55 @@ function AppContent() {
 
     try {
       if (authMode === 'login') {
-        await login(authEmail, authPassword, authRemember);
-        setShowAuthModal(false);
-        setActiveTab('dashboard');
+        const res = await login(authEmail, authPassword, authRemember);
+        if (res && res.requiresMobileVerification) {
+          setVerificationPhone(res.phoneNumber || authEmail);
+          setSimulatedOtp(res.otpSimulated || '');
+          setAuthMode('verify-mobile-otp');
+          setTimer(60);
+          setOtpDigits(Array(6).fill(''));
+          setAttemptsLeft(5);
+          setAuthFeedback("Please verify your mobile number. Simulated OTP: " + res.otpSimulated);
+        } else {
+          setShowAuthModal(false);
+          setActiveTab('dashboard');
+        }
       } else if (authMode === 'signup') {
-        await signup(authName, authEmail, authPhone, authPassword);
-        setAuthFeedback("Account registered successfully! Logging you in...");
-        
-        // Directly perform a automatic login call to make it seamless
-        try {
-          const loginRes = await login(authEmail, authPassword, authRemember);
-          if (loginRes && loginRes.token) {
-            setShowAuthModal(false);
-            setActiveTab('profile-setup'); // Redirect to profile setup directly!
-          } else {
-            setAuthFeedback("Registration completed. Please sign in with your credentials.");
-            setAuthMode('login');
-          }
-        } catch (loginErr) {
-          setAuthFeedback("Registration completed! Please sign in using your new credentials.");
+        // Validate Indian mobile number format
+        const phoneRegex = /^(?:\+91|0)?[6789]\d{9}$/;
+        if (!phoneRegex.test(authPhone)) {
+          setAuthFeedback("Please enter a valid 10-digit Indian mobile number (e.g. 9876543210).");
+          setAuthLoading(false);
+          return;
+        }
+
+        const res = await signup(authName, '', authPhone, authPassword);
+        if (res && res.requiresMobileVerification) {
+          setVerificationPhone(res.phoneNumber || authPhone);
+          setSimulatedOtp(res.otpSimulated || '');
+          setAuthMode('verify-mobile-otp');
+          setTimer(60);
+          setOtpDigits(Array(6).fill(''));
+          setAttemptsLeft(5);
+          setAuthFeedback("A secure random 6-digit OTP has been sent. Simulated Code: " + res.otpSimulated);
+        } else {
+          setAuthFeedback("Account registered! Please login to proceed.");
           setAuthMode('login');
+        }
+      } else if (authMode === 'verify-mobile-otp') {
+        const fullOtp = otpDigits.join('');
+        if (fullOtp.length !== 6) {
+          setAuthFeedback("Please enter all 6 digits of the OTP code.");
+          setAuthLoading(false);
+          return;
+        }
+        try {
+          await verifyMobileOtp(verificationPhone, fullOtp);
+          setShowAuthModal(false);
+          setActiveTab('profile-setup'); // Redirect to profile onboarding directly!
+        } catch (verifyErr: any) {
+          setAttemptsLeft((prev) => Math.max(0, prev - 1));
+          throw verifyErr;
         }
       } else if (authMode === 'verify-otp') {
         await verifyOtp(authEmail, authOtp);
@@ -124,6 +237,8 @@ function AppContent() {
         activeTab={activeTab} 
         setActiveTab={setActiveTab} 
         onOpenAuth={handleOpenAuth} 
+        currentLanguage={currentLanguage}
+        onChangeLanguage={setLanguage}
       />
 
       {/* Main Interactive Workspace Area */}
@@ -141,6 +256,7 @@ function AppContent() {
         {activeTab === 'schemes' && (
           <SchemesPage 
             onApplySuccess={() => setActiveTab('dashboard')} 
+            currentLanguage={currentLanguage}
           />
         )}
 
@@ -149,6 +265,7 @@ function AppContent() {
             onExplore={() => setActiveTab('schemes')}
             onEditProfile={() => setActiveTab('profile-setup')}
             onViewEligibility={() => setActiveTab('eligibility')}
+            currentLanguage={currentLanguage}
           />
         )}
 
@@ -168,7 +285,7 @@ function AppContent() {
               <h2 className="font-display text-lg font-bold text-white">BharatAssist AI Multilingual Companion</h2>
               <p className="text-xs text-slate-400">Ask queries about grants, state rules, or application steps</p>
             </div>
-            <ChatBot />
+            <ChatBot currentLanguage={currentLanguage} />
           </div>
         )}
 
@@ -306,13 +423,15 @@ function AppContent() {
               {authMode === 'login' && "Sign In to BharatAssist"}
               {authMode === 'signup' && "Create Citizen Account"}
               {authMode === 'verify-otp' && "Verify Citizen Credentials"}
+              {authMode === 'verify-mobile-otp' && "Verify Mobile Number"}
               {authMode === 'forgot' && "Citizen Recovery Vault"}
               {authMode === 'reset-password' && "Set New Password"}
             </h3>
             <p className="text-[10px] text-slate-400 mb-5">
-              {authMode === 'login' && "Sign in with your verified email and password"}
-              {authMode === 'signup' && "Register to compare schemes and scan files"}
+              {authMode === 'login' && "Sign in with your verified email, mobile number and password"}
+              {authMode === 'signup' && "Register with your full name and mobile number to compare schemes"}
               {authMode === 'verify-otp' && "Provide the simulated email OTP token to verify profile"}
+              {authMode === 'verify-mobile-otp' && `Enter the 6-digit secure random OTP dispatched to ${verificationPhone}`}
               {authMode === 'forgot' && "Confirm email to trigger credentials recovery"}
               {authMode === 'reset-password' && "Configure a safe password to lock your profile"}
             </p>
@@ -334,22 +453,22 @@ function AppContent() {
                     value={authName}
                     onChange={(e) => setAuthName(e.target.value)}
                     placeholder="Full Name (As in Aadhaar)"
-                    className="w-full rounded-xl border border-slate-800 bg-slate-950 pl-9 pr-4 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none"
+                    className="w-full rounded-xl border border-slate-800 bg-slate-950 pl-9 pr-4 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-amber-500"
                     required
                   />
                 </div>
               )}
 
-              {/* Email field for auth actions */}
-              {authMode !== 'verify-otp' && authMode !== 'reset-password' && (
+              {/* Email field for auth actions (not signup) */}
+              {(authMode === 'login' || authMode === 'forgot') && (
                 <div className="relative">
                   <Mail className="absolute left-3 top-3.5 h-4 w-4 text-slate-500" />
                   <input
-                    type="email"
+                    type="text"
                     value={authEmail}
                     onChange={(e) => setAuthEmail(e.target.value)}
-                    placeholder="Citizen Email Address"
-                    className="w-full rounded-xl border border-slate-800 bg-slate-950 pl-9 pr-4 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none"
+                    placeholder="Citizen Email or Mobile Number"
+                    className="w-full rounded-xl border border-slate-800 bg-slate-950 pl-9 pr-4 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-amber-500"
                     required
                   />
                 </div>
@@ -363,8 +482,8 @@ function AppContent() {
                     type="tel"
                     value={authPhone}
                     onChange={(e) => setAuthPhone(e.target.value)}
-                    placeholder="Mobile Contact No."
-                    className="w-full rounded-xl border border-slate-800 bg-slate-950 pl-9 pr-4 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none"
+                    placeholder="Mobile Contact No. (e.g. 9876543210)"
+                    className="w-full rounded-xl border border-slate-800 bg-slate-950 pl-9 pr-4 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-amber-500"
                     required
                   />
                 </div>
@@ -379,13 +498,55 @@ function AppContent() {
                     value={authPassword}
                     onChange={(e) => setAuthPassword(e.target.value)}
                     placeholder="Profile Password"
-                    className="w-full rounded-xl border border-slate-800 bg-slate-950 pl-9 pr-4 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none"
+                    className="w-full rounded-xl border border-slate-800 bg-slate-950 pl-9 pr-4 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-amber-500"
                     required
                   />
                 </div>
               )}
 
-              {/* OTP token field */}
+              {/* Six separate OTP input boxes for Mobile Verification */}
+              {authMode === 'verify-mobile-otp' && (
+                <div className="space-y-4">
+                  <div className="flex justify-between gap-2" onPaste={handlePaste}>
+                    {otpDigits.map((digit, idx) => (
+                      <input
+                        key={idx}
+                        ref={(el) => (inputRefs.current[idx] = el)}
+                        type="text"
+                        maxLength={1}
+                        value={digit}
+                        onChange={(e) => handleChange(idx, e.target.value)}
+                        onKeyDown={(e) => handleKeyDown(idx, e)}
+                        className="w-12 h-12 text-center rounded-xl border border-slate-800 bg-slate-950 text-lg font-bold text-white focus:outline-none focus:border-amber-500 font-mono"
+                      />
+                    ))}
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] text-slate-400">
+                    <div className="flex items-center space-x-1">
+                      {timer > 0 ? (
+                        <span className="flex items-center space-x-1">
+                          <Clock className="h-3.5 w-3.5 text-slate-500 animate-pulse" />
+                          <span>Resend OTP in <strong className="text-white font-semibold">{timer}s</strong></span>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleResendOtp}
+                          className="text-amber-400 hover:underline hover:text-amber-300 font-bold"
+                        >
+                          Resend OTP Code
+                        </button>
+                      )}
+                    </div>
+                    <div>
+                      <span>Attempts left: <strong className="text-white font-semibold">{attemptsLeft}</strong></span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Standard OTP token field */}
               {(authMode === 'verify-otp' || authMode === 'reset-password') && (
                 <div className="relative">
                   <Key className="absolute left-3 top-3.5 h-4 w-4 text-slate-500" />
@@ -434,6 +595,7 @@ function AppContent() {
                   <span>
                     {authMode === 'login' && "Access Account"}
                     {authMode === 'signup' && "Create Free Account"}
+                    {authMode === 'verify-mobile-otp' && "Confirm Mobile OTP"}
                     {authMode === 'verify-otp' && "Confirm Email OTP"}
                     {authMode === 'forgot' && "Dispatch OTP Link"}
                     {authMode === 'reset-password' && "Activate New Password"}
@@ -476,7 +638,9 @@ function AppContent() {
 export default function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <LanguageProvider>
+        <AppContent />
+      </LanguageProvider>
     </AuthProvider>
   );
 }

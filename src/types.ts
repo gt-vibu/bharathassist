@@ -19,6 +19,10 @@ export interface User {
   email: string;
   phoneNumber: string;
   isEmailVerified: boolean;
+  mobileVerified?: boolean;
+  aadhaarNumber?: string;
+  aadhaarFormatValid?: boolean;
+  aadhaarDocValidated?: boolean;
   verificationOtp?: string;
   passwordHash?: string;
   createdAt: string;

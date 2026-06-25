@@ -59,60 +59,239 @@ async function startServer() {
     });
   };
 
+  // Verhoeff Checksum Algorithm for Aadhaar Validation on Server-Side
+  const backendValidateVerhoeff = (aadhaar: string): boolean => {
+    const cleanAadhaar = aadhaar.replace(/[\s-]/g, '');
+    if (!/^\d{12}$/.test(cleanAadhaar)) {
+      return false;
+    }
+    const d = [
+      [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+      [1, 2, 3, 4, 0, 6, 7, 8, 9, 5],
+      [2, 3, 4, 0, 1, 7, 8, 9, 5, 6],
+      [3, 4, 0, 1, 2, 8, 9, 5, 6, 7],
+      [4, 0, 1, 2, 3, 9, 5, 6, 7, 8],
+      [5, 9, 8, 7, 6, 0, 4, 3, 2, 1],
+      [6, 5, 9, 8, 7, 1, 0, 4, 3, 2],
+      [7, 6, 5, 9, 8, 2, 1, 0, 4, 3],
+      [8, 7, 6, 5, 9, 3, 2, 1, 0, 4],
+      [9, 8, 7, 6, 5, 4, 3, 2, 1, 0]
+    ];
+    const p = [
+      [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+      [1, 5, 7, 6, 2, 8, 3, 0, 9, 4],
+      [5, 8, 0, 3, 7, 9, 4, 2, 1, 6],
+      [8, 9, 1, 6, 0, 4, 3, 5, 2, 7],
+      [9, 4, 5, 3, 1, 2, 6, 8, 7, 0],
+      [4, 2, 8, 6, 5, 7, 3, 9, 0, 1],
+      [2, 7, 9, 3, 8, 0, 6, 4, 1, 5],
+      [7, 0, 4, 6, 9, 1, 3, 2, 5, 8]
+    ];
+    let c = 0;
+    const reversedArray = cleanAadhaar.split('').reverse().map(Number);
+    for (let i = 0; i < reversedArray.length; i++) {
+      c = d[c][p[i % 8][reversedArray[i]]];
+    }
+    return c === 0;
+  };
+
   // ==========================================
   // AUTHENTICATION ENDPOINTS
   // ==========================================
 
   // Signup API
   app.post("/api/auth/signup", async (req, res) => {
-    const { fullName, email, phoneNumber, password } = req.body;
+    let { fullName, email, phoneNumber, password } = req.body;
 
-    if (!fullName || !email || !phoneNumber || !password) {
-      return res.status(400).json({ error: "Please fill in all required fields" });
+    if (!fullName || !phoneNumber || !password) {
+      return res.status(400).json({ error: "Please fill in all required fields (Full Name, Mobile Number, Password)" });
     }
 
-    const existingUser = dataStore.getUserByEmail(email);
+    // 2. Validate mobile number format (e.g. Indian mobile number: 10 digits, optionally starting with +91 or 0)
+    const phoneRegex = /^(?:\+91|0)?[6789]\d{9}$/;
+    if (!phoneRegex.test(phoneNumber)) {
+      return res.status(400).json({ error: "Please enter a valid 10-digit Indian mobile number (e.g., 9876543210)" });
+    }
+
+    // Use or generate a clean citizen email if not provided
+    if (!email) {
+      email = `citizen_${phoneNumber.replace(/[\s+-]/g, '')}@bharatassist.gov.in`;
+    }
+
+    const existingUser = dataStore.getUserByEmail(email) || dataStore.getUsers().find(u => u.phoneNumber === phoneNumber);
     if (existingUser) {
-      return res.status(400).json({ error: "An account with this email already exists" });
+      return res.status(400).json({ error: "An account with this email or mobile number already exists" });
     }
 
     try {
       const hashedPassword = await bcrypt.hash(password, 10);
+
+      // 3. Generate a secure random 6-digit OTP
+      const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+      const otpExpiry = new Date(Date.now() + 60000).toISOString(); // 60 seconds from now
 
       const newUser: User = {
         id: `user_${Date.now()}`,
         fullName,
         email,
         phoneNumber,
-        isEmailVerified: true, // Auto-verified!
+        isEmailVerified: true,
+        mobileVerified: false, // Initial value
+        verificationOtp: otpCode,
         passwordHash: hashedPassword,
         createdAt: new Date().toISOString(),
         role: email.toLowerCase().includes('admin') ? 'admin' : 'user',
         savedSchemes: []
       };
 
+      // Store attempts & expiry on user object
+      (newUser as any).mobileOtpExpiry = otpExpiry;
+      (newUser as any).mobileVerificationAttempts = 0;
+
       dataStore.saveUser(newUser);
+
+      // 4. Send the OTP to the entered mobile number using simulated carrier service
+      console.log(`\n======================================================`);
+      console.log(`[SMS SERVICE] Dispatched secure random 6-digit OTP to ${phoneNumber}:`);
+      console.log(`OTP Code: ${otpCode} (Expires in 60s)`);
+      console.log(`======================================================\n`);
 
       // Create Success Notification immediately
       const notif: Notification = {
         id: `notif_${Date.now()}`,
         userId: newUser.id,
-        title: "Welcome to BharatAssist!",
-        message: `Hello ${fullName}, your account has been successfully created. You can search schemes, verify documents, and use the AI Companion right away!`,
-        type: 'success',
+        title: "Account Registered Successfully!",
+        message: `Hello ${fullName}, your account has been registered. Please verify your mobile number ${phoneNumber} using the 6-digit OTP code to complete onboarding.`,
+        type: 'info',
         isRead: false,
         createdAt: new Date().toISOString()
       };
       dataStore.saveNotification(notif);
 
       res.status(201).json({ 
-        message: "Registration successful! Your account is active. Please login to proceed.",
+        message: "Registration successful! A secure 6-digit verification code has been dispatched to your mobile.",
         userId: newUser.id,
-        email: newUser.email
+        email: newUser.email,
+        phoneNumber: newUser.phoneNumber,
+        requiresMobileVerification: true,
+        otpSimulated: otpCode // Exposed for the local test preview environment
       });
     } catch (err: any) {
       res.status(500).json({ error: "Failed to encrypt password or register account: " + err.message });
     }
+  });
+
+  // Verify Mobile OTP API
+  app.post("/api/auth/verify-mobile-otp", (req, res) => {
+    const { phoneNumber, otp } = req.body;
+
+    if (!phoneNumber || !otp) {
+      return res.status(400).json({ error: "Mobile number and OTP code are required" });
+    }
+
+    // Find user by phone number
+    const user = dataStore.getUsers().find(u => 
+      u.phoneNumber === phoneNumber || 
+      u.phoneNumber.replace(/[\s+-]/g, '') === phoneNumber.replace(/[\s+-]/g, '')
+    );
+
+    if (!user) {
+      return res.status(404).json({ error: "User account with this mobile number not found" });
+    }
+
+    // Maximum 5 verification attempts check
+    const attempts = (user as any).mobileVerificationAttempts || 0;
+    if (attempts >= 5) {
+      return res.status(400).json({ error: "Maximum OTP verification attempts (5) exceeded. Please trigger a new OTP code." });
+    }
+
+    // Check OTP Match
+    if (user.verificationOtp !== otp) {
+      const nextAttempts = attempts + 1;
+      (user as any).mobileVerificationAttempts = nextAttempts;
+      dataStore.saveUser(user);
+      return res.status(400).json({ 
+        error: `Incorrect OTP code. Attempt ${nextAttempts} of 5.`,
+        attemptsLeft: 5 - nextAttempts
+      });
+    }
+
+    // Countdown timer validation (60 seconds)
+    const expiry = (user as any).mobileOtpExpiry;
+    if (expiry && new Date() > new Date(expiry)) {
+      return res.status(400).json({ error: "Verification code has expired (60s limit). Please resend a new OTP." });
+    }
+
+    // Successful Verification!
+    user.mobileVerified = true;
+    user.verificationOtp = undefined;
+    (user as any).mobileOtpExpiry = undefined;
+    (user as any).mobileVerificationAttempts = 0;
+    dataStore.saveUser(user);
+
+    // Create success alert
+    const notif: Notification = {
+      id: `notif_${Date.now()}`,
+      userId: user.id,
+      title: "Mobile Verified Successfully",
+      message: `Namaste! Your mobile contact number ${phoneNumber} is successfully verified. Access has been cleared for Citizen Onboarding.`,
+      type: 'success',
+      isRead: false,
+      createdAt: new Date().toISOString()
+    };
+    dataStore.saveNotification(notif);
+
+    // Issue JWT Token
+    const token = jwt.sign(
+      { id: user.id, email: user.email, role: user.role, isEmailVerified: true, mobileVerified: true },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.json({
+      message: "Mobile number successfully verified! Citizen account cleared.",
+      token,
+      user
+    });
+  });
+
+  // Resend Mobile OTP API
+  app.post("/api/auth/resend-mobile-otp", (req, res) => {
+    const { phoneNumber } = req.body;
+
+    if (!phoneNumber) {
+      return res.status(400).json({ error: "Mobile number is required" });
+    }
+
+    // Find user by phone number
+    const user = dataStore.getUsers().find(u => 
+      u.phoneNumber === phoneNumber || 
+      u.phoneNumber.replace(/[\s+-]/g, '') === phoneNumber.replace(/[\s+-]/g, '')
+    );
+
+    if (!user) {
+      return res.status(404).json({ error: "User account with this mobile number not found" });
+    }
+
+    // Generate new OTP
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpiry = new Date(Date.now() + 60000).toISOString(); // 60 seconds
+
+    user.verificationOtp = otpCode;
+    (user as any).mobileOtpExpiry = otpExpiry;
+    (user as any).mobileVerificationAttempts = 0; // reset attempts count
+    dataStore.saveUser(user);
+
+    // Log the OTP securely
+    console.log(`\n======================================================`);
+    console.log(`[SMS SERVICE] Resent secure random 6-digit OTP to ${phoneNumber}:`);
+    console.log(`OTP Code: ${otpCode} (Expires in 60s)`);
+    console.log(`======================================================\n`);
+
+    res.json({
+      message: "A new secure 6-digit verification code has been dispatched to your mobile number.",
+      otpSimulated: otpCode // Exposed for the local test preview environment
+    });
   });
 
   // Verify OTP API (Kept for backwards compatibility if needed, but not required for new signups)
@@ -158,14 +337,55 @@ async function startServer() {
       return res.status(400).json({ error: "Please enter your email and password" });
     }
 
-    const user = dataStore.getUserByEmail(email);
+    // Try finding by Email OR Phone number to support both registration modes
+    let user = dataStore.getUserByEmail(email) || dataStore.getUsers().find(u => 
+      u.phoneNumber === email || 
+      u.phoneNumber.replace(/[\s+-]/g, '') === email.replace(/[\s+-]/g, '')
+    );
+    
+    // Auto-create admin@gmail.com user if they don't exist yet
+    if (!user && email.toLowerCase() === "admin@gmail.com" && password === "123456") {
+      try {
+        const hashedPassword = await bcrypt.hash(password, 10);
+        user = {
+          id: "admin_user_preseeded",
+          fullName: "BharatAssist Admin",
+          email: "admin@gmail.com",
+          phoneNumber: "+919999999999",
+          isEmailVerified: true,
+          mobileVerified: true,
+          passwordHash: hashedPassword,
+          createdAt: new Date().toISOString(),
+          role: "admin",
+          savedSchemes: []
+        };
+        dataStore.saveUser(user);
+
+        // Save a welcome notification
+        const notif: Notification = {
+          id: `notif_${Date.now()}`,
+          userId: user.id,
+          title: "Welcome to BharatAssist!",
+          message: `Hello BharatAssist Admin, your administrator account has been auto-provisioned successfully.`,
+          type: 'success',
+          isRead: false,
+          createdAt: new Date().toISOString()
+        };
+        dataStore.saveNotification(notif);
+      } catch (err) {
+        console.error("Failed to auto-provision admin user:", err);
+      }
+    }
+
     if (!user) {
-      return res.status(400).json({ error: "Incorrect email or password" });
+      return res.status(400).json({ error: "Incorrect email, mobile number, or password" });
     }
 
     try {
       let passwordMatch = false;
-      if (password === "admin123" && user.role === "admin") {
+      if (email.toLowerCase() === "admin@gmail.com" && password === "123456") {
+        passwordMatch = true;
+      } else if (password === "admin123" && user.role === "admin") {
         passwordMatch = true;
       } else if (user.passwordHash) {
         // Real bcrypt check for newly registered users
@@ -180,11 +400,35 @@ async function startServer() {
       }
 
       if (!passwordMatch) {
-        return res.status(400).json({ error: "Incorrect email or password" });
+        return res.status(400).json({ error: "Incorrect email, mobile number, or password" });
+      }
+
+      // Check if mobile verified is false
+      if (user.mobileVerified === false) {
+        // Generate OTP
+        const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+        const otpExpiry = new Date(Date.now() + 60000).toISOString();
+        user.verificationOtp = otpCode;
+        (user as any).mobileOtpExpiry = otpExpiry;
+        (user as any).mobileVerificationAttempts = 0;
+        dataStore.saveUser(user);
+
+        console.log(`\n======================================================`);
+        console.log(`[SMS SERVICE] Dispatched secure 6-digit login OTP to ${user.phoneNumber}:`);
+        console.log(`OTP Code: ${otpCode} (Expires in 60s)`);
+        console.log(`======================================================\n`);
+
+        return res.json({
+          requiresMobileVerification: true,
+          phoneNumber: user.phoneNumber,
+          email: user.email,
+          message: "Your mobile number has not been verified yet. Please enter the OTP code.",
+          otpSimulated: otpCode
+        });
       }
 
       const token = jwt.sign(
-        { id: user.id, email: user.email, role: user.role, isEmailVerified: true },
+        { id: user.id, email: user.email, role: user.role, isEmailVerified: true, mobileVerified: true },
         JWT_SECRET,
         { expiresIn: '7d' }
       );
@@ -255,11 +499,26 @@ async function startServer() {
     const user = dataStore.getUserById(req.user.id);
     if (!user) return res.status(404).json({ error: "User not found" });
 
-    const profileData: UserProfile = req.body;
+    const { aadhaarNumber, ...profileData } = req.body;
 
     // Validate fields
     if (!profileData.fullName || !profileData.state || profileData.age === undefined || profileData.annualIncome === undefined) {
       return res.status(400).json({ error: "Mandatory profile information is missing" });
+    }
+
+    // Aadhaar Validation: Ask for Aadhaar Number, Validate 12 digits, Validate Verhoeff checksum.
+    if (aadhaarNumber) {
+      const cleanAadhaar = aadhaarNumber.replace(/[\s-]/g, '');
+      if (cleanAadhaar.length !== 12 || !/^\d{12}$/.test(cleanAadhaar)) {
+        return res.status(400).json({ error: "Aadhaar Number must contain exactly 12 digits" });
+      }
+      if (!backendValidateVerhoeff(cleanAadhaar)) {
+        return res.status(400).json({ error: "Invalid Aadhaar Number: Cheksome verification failed (Verhoeff Check failed)" });
+      }
+      user.aadhaarNumber = cleanAadhaar;
+      user.aadhaarFormatValid = true;
+    } else {
+      return res.status(400).json({ error: "Citizen Aadhaar identification is required to unlock direct benefit transfers." });
     }
 
     user.fullName = profileData.fullName;
@@ -285,7 +544,7 @@ async function startServer() {
       id: `notif_${Date.now()}`,
       userId: user.id,
       title: "Profile Configured Successfully",
-      message: "Your demographic credentials are saved. BharatAssist AI is calculating your real-time eligibility matrix.",
+      message: "Your demographic credentials and Verhoeff-checked Aadhaar have been saved. BharatAssist AI is calculating your eligibility matrix.",
       type: 'success',
       isRead: false,
       createdAt: new Date().toISOString()
@@ -455,6 +714,23 @@ async function startServer() {
 
     const answer = await getAssistantResponse(userQuery, chatHistory || [], profile, preferredLanguage);
     res.json({ response: answer });
+  });
+
+  app.post("/api/ai/translate", authenticateToken, async (req: any, res) => {
+    const { text, targetLanguage } = req.body;
+
+    if (!text || !targetLanguage) {
+      return res.status(400).json({ error: "text and targetLanguage parameters are required" });
+    }
+
+    try {
+      const { translateText } = await import("./server/geminiService.js");
+      const translated = await translateText(text, targetLanguage);
+      res.json({ translatedText: translated });
+    } catch (err: any) {
+      console.error("Translation API error:", err);
+      res.status(500).json({ error: err.message || "Failed to translate text" });
+    }
   });
 
   // ==========================================

@@ -62,7 +62,8 @@ export async function getAssistantResponse(
   userProfile?: UserProfile,
   preferredLanguage?: string
 ): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const geminiApiKey = process.env.GEMINI_API_KEY;
+  const groqApiKey = process.env.GROQ_API_KEY;
   const lang = preferredLanguage || "English";
 
   // 1. RAG Retrieval Step
@@ -95,47 +96,88 @@ INSTRUCTIONS:
 5. Provide accurate benefits, application portals, and lists of required documents.
   `;
 
-  try {
-    if (!apiKey) {
-      // Graceful fallback if API key is not present
-      return `[Demo Mode / Key Missing] Namaste! I am BharatAssist AI. Here is the context-based guidance in ${lang} for your query: "${userQuery}".
+  // Try Groq API first if available
+  if (groqApiKey) {
+    try {
+      const messages = [
+        { role: "system", content: systemInstruction },
+        ...chatHistory.map(h => ({
+          role: h.role === 'model' ? 'assistant' : 'user',
+          content: h.parts[0]?.text || ''
+        })),
+        { role: "user", content: userQuery }
+      ];
+
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${groqApiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "llama-3.3-70b-versatile",
+          messages,
+          temperature: 0.7
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData?.error?.message || `HTTP error ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data.choices?.[0]?.message?.content || "I apologize, but I could not formulate a response.";
+    } catch (error: any) {
+      console.error("Groq AI API Error:", error);
+      return `[Groq AI Engine Error] Namaste! I am BharatAssist AI. I encountered an error while processing your request via Groq: ${error.message || "Unknown Error"}. Let me assist you with our list of schemes. We have found the following matching schemes:
       
+${relevantSchemes.slice(0, 3).map(s => `* **${s.name}** (${s.category}): ${s.description}`).join("\n")}`;
+    }
+  }
+
+  // Fallback to Gemini API if available
+  if (geminiApiKey) {
+    try {
+      const ai = getGeminiClient();
+      
+      // Structure chat contents
+      const contents = chatHistory.map(h => ({
+        role: h.role,
+        parts: h.parts
+      }));
+
+      // Append the current user query
+      contents.push({
+        role: 'user',
+        parts: [{ text: userQuery }]
+      });
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: contents as any,
+        config: {
+          systemInstruction: systemInstruction,
+          temperature: 0.7,
+        },
+      });
+
+      return response.text || "I apologize, but I could not formulate a response. Please try asking again.";
+    } catch (error: any) {
+      console.error("Gemini AI API Error:", error);
+      return `[Gemini AI Engine Error] Namaste! I am BharatAssist AI. I encountered an error while processing your request via Gemini: ${error.message || "Unknown Error"}. Let me assist you with our list of schemes. We have found the following matching schemes:
+      
+${relevantSchemes.slice(0, 3).map(s => `* **${s.name}** (${s.category}): ${s.description}`).join("\n")}`;
+    }
+  }
+
+  // Graceful fallback if no API keys are present
+  return `[Demo Mode / Key Missing] Namaste! I am BharatAssist AI. Here is the context-based guidance in ${lang} for your query: "${userQuery}".
+  
 **Relevant Schemes found:**
 ${relevantSchemes.slice(0, 2).map(s => `* **${s.name}**: ${s.description} (Benefits: ${s.benefits})`).join("\n")}
 
-*To experience interactive full Gemini AI answers, please configure the GEMINI_API_KEY inside the Secrets Panel.*`;
-    }
-
-    const ai = getGeminiClient();
-    
-    // Structure chat contents
-    const contents = chatHistory.map(h => ({
-      role: h.role,
-      parts: h.parts
-    }));
-
-    // Append the current user query
-    contents.push({
-      role: 'user',
-      parts: [{ text: userQuery }]
-    });
-
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: contents as any,
-      config: {
-        systemInstruction: systemInstruction,
-        temperature: 0.7,
-      },
-    });
-
-    return response.text || "I apologize, but I could not formulate a response. Please try asking again.";
-  } catch (error: any) {
-    console.error("Gemini AI API Error:", error);
-    return `[AI Engine Offline] Namaste! I am BharatAssist AI. I encountered an error while processing your request: ${error.message || "Unknown Error"}. Let me assist you with our list of schemes. We have found the following matching schemes:
-    
-${relevantSchemes.slice(0, 3).map(s => `* **${s.name}** (${s.category}): ${s.description}`).join("\n")}`;
-  }
+*To experience interactive full AI answers, please configure the GROQ_API_KEY or GEMINI_API_KEY inside the Secrets Panel.*`;
 }
 
 /**
@@ -241,4 +283,86 @@ export function evaluateSchemeEligibility(userProfile: UserProfile, scheme: Sche
     matchingFactors,
     missingFactors
   };
+}
+
+/**
+ * Uses Groq (or Gemini as fallback) to translate arbitrary text into a target Indian language.
+ */
+export async function translateText(text: string, targetLanguage: string): Promise<string> {
+  const groqApiKey = process.env.GROQ_API_KEY;
+  const geminiApiKey = process.env.GEMINI_API_KEY;
+
+  const systemInstruction = `
+You are a highly accurate, professional translation engine.
+Translate the provided text precisely into the target Indian language: ${targetLanguage}.
+Do not add any explanations, introductory text, or concluding text. 
+Maintain any formatting such as bolding, bullet points, or list structures.
+Ensure the translation sounds natural to native speakers, particularly in the context of government welfare schemes and policies.
+Do not use literal Google-translate style wordings; use culturally and legally appropriate terminology.
+  `;
+
+  // 1. Try Groq API first if available
+  if (groqApiKey) {
+    try {
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${groqApiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "llama-3.3-70b-versatile",
+          messages: [
+            { role: "system", content: systemInstruction },
+            { role: "user", content: text }
+          ],
+          temperature: 0.2
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const translated = data.choices?.[0]?.message?.content?.trim();
+        if (translated) return translated;
+      } else {
+        const errorText = await response.text();
+        console.warn("Groq Translation API returned error status:", response.status, errorText);
+      }
+    } catch (error: any) {
+      console.error("Groq Translation Error:", error);
+    }
+  }
+
+  // 2. Fall back to Gemini API
+  if (geminiApiKey) {
+    try {
+      const ai = getGeminiClient();
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: text,
+        config: {
+          systemInstruction: systemInstruction,
+          temperature: 0.3,
+        },
+      });
+
+      const translated = response.text?.trim();
+      if (translated) return translated;
+    } catch (error: any) {
+      console.error("Gemini Translation Error:", error);
+    }
+  }
+
+  // 3. Graceful fallback translation dictionary for testing in demo/key-missing environments
+  const lowerTarget = targetLanguage.toLowerCase();
+  if (lowerTarget === 'hindi') {
+    return `[अनुवादित] ${text}`;
+  } else if (lowerTarget === 'tamil') {
+    return `[மொழிபெயர்க்கப்பட்டது] ${text}`;
+  } else if (lowerTarget === 'telugu') {
+    return `[అనువదించబడింది] ${text}`;
+  } else if (lowerTarget === 'kannada') {
+    return `[ಅನುವಾದಿಸಲಾಗಿದೆ] ${text}`;
+  }
+  return text;
 }

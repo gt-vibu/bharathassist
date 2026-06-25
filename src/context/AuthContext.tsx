@@ -10,6 +10,8 @@ interface AuthContextType {
   isLoading: boolean;
   signup: (fullName: string, email: string, phoneNumber: string, password: string) => Promise<any>;
   verifyOtp: (email: string, otp: string) => Promise<any>;
+  verifyMobileOtp: (phoneNumber: string, otp: string) => Promise<any>;
+  resendMobileOtp: (phoneNumber: string) => Promise<any>;
   login: (email: string, password: string, rememberMe?: boolean) => Promise<any>;
   logout: () => void;
   forgotPassword: (email: string) => Promise<any>;
@@ -81,6 +83,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Signup failed");
+    return data;
+  };
+
+  const verifyMobileOtp = async (phoneNumber: string, otp: string) => {
+    const res = await fetch('/api/auth/verify-mobile-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phoneNumber, otp })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Verification failed");
+    
+    setToken(data.token);
+    setUser(data.user);
+    localStorage.setItem('bharat_token', data.token);
+    return data;
+  };
+
+  const resendMobileOtp = async (phoneNumber: string) => {
+    const res = await fetch('/api/auth/resend-mobile-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phoneNumber })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to resend code");
     return data;
   };
 
@@ -286,6 +314,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isLoading,
       signup,
       verifyOtp,
+      verifyMobileOtp,
+      resendMobileOtp,
       login,
       logout,
       forgotPassword,

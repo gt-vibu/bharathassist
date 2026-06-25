@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext.js';
+import { useTranslation } from '../context/LanguageContext.js';
 import { 
   Home, 
   Search, 
@@ -14,17 +15,21 @@ import {
   Bell, 
   ShieldAlert,
   Info,
-  Mail
+  Mail,
+  Globe
 } from 'lucide-react';
 
 interface NavbarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
   onOpenAuth: (mode: 'login' | 'signup') => void;
+  currentLanguage: string;
+  onChangeLanguage: (lang: string) => void;
 }
 
-export default function Navbar({ activeTab, setActiveTab, onOpenAuth }: NavbarProps) {
+export default function Navbar({ activeTab, setActiveTab, onOpenAuth, currentLanguage, onChangeLanguage }: NavbarProps) {
   const { user, logout, notifications, markNotificationRead } = useAuth();
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
 
@@ -88,7 +93,7 @@ export default function Navbar({ activeTab, setActiveTab, onOpenAuth }: NavbarPr
                 }`}
               >
                 <Icon className="h-4 w-4" />
-                <span>{item.label}</span>
+                <span>{t(item.label)}</span>
               </button>
             );
           })}
@@ -96,6 +101,23 @@ export default function Navbar({ activeTab, setActiveTab, onOpenAuth }: NavbarPr
 
         {/* Action Controls */}
         <div id="navbar-actions" className="flex items-center space-x-3">
+          
+          {/* Global AI Translation Dropdown */}
+          <div className="flex items-center space-x-1.5 border border-slate-800 bg-slate-900/60 rounded-xl px-2 py-1 shadow-sm" id="global-ai-translate-box">
+            <Globe className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+            <select
+              value={currentLanguage}
+              onChange={(e) => onChangeLanguage(e.target.value)}
+              className="bg-transparent text-[11px] font-bold text-slate-300 focus:outline-none cursor-pointer hover:text-white"
+              id="navbar-ai-translate-select"
+            >
+              <option value="English" className="bg-slate-950 text-white">EN (English)</option>
+              <option value="Hindi" className="bg-slate-950 text-white">HI (हिन्दी)</option>
+              <option value="Tamil" className="bg-slate-950 text-white">TA (தமிழ்)</option>
+              <option value="Telugu" className="bg-slate-950 text-white">TE (తెలుగు)</option>
+              <option value="Kannada" className="bg-slate-950 text-white">KN (ಕನ್ನಡ)</option>
+            </select>
+          </div>
           
           {/* Notifications Alerts */}
           {user && (
@@ -182,11 +204,12 @@ export default function Navbar({ activeTab, setActiveTab, onOpenAuth }: NavbarPr
               </div>
               <button
                 onClick={logout}
-                className="rounded-lg p-2 text-slate-400 hover:bg-slate-900 hover:text-white"
-                title="Sign Out"
+                className="flex items-center space-x-1.5 rounded-xl border border-slate-800 bg-slate-900/40 hover:bg-red-950/20 hover:border-red-900/40 px-3 py-1.5 text-xs text-slate-300 hover:text-red-400 transition-all duration-200 shadow-sm"
+                title={t("Logout")}
                 id="nav-logout-btn"
               >
-                <LogOut className="h-4.5 w-4.5" />
+                <LogOut className="h-3.5 w-3.5" />
+                <span className="font-medium">{t("Logout")}</span>
               </button>
             </div>
           ) : (
@@ -196,14 +219,14 @@ export default function Navbar({ activeTab, setActiveTab, onOpenAuth }: NavbarPr
                 className="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-900 hover:text-white"
                 id="nav-login-trigger"
               >
-                Login
+                {t("Login")}
               </button>
               <button
                 onClick={() => onOpenAuth('signup')}
-                className="rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 px-3.5 py-1.5 text-xs font-semibold text-slate-950 hover:from-amber-400 hover:to-orange-400"
+                className="rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 px-3.5 py-1.5 text-xs font-semibold text-slate-950 hover:from-amber-400 hover:to-orange-400 shadow-md transition-all duration-200"
                 id="nav-signup-trigger"
               >
-                Register
+                {t("Register")}
               </button>
             </div>
           )}
@@ -237,7 +260,7 @@ export default function Navbar({ activeTab, setActiveTab, onOpenAuth }: NavbarPr
                   }`}
                 >
                   <Icon className="h-5 w-5" />
-                  <span>{item.label}</span>
+                  <span>{t(item.label)}</span>
                 </button>
               );
             })}
@@ -247,7 +270,20 @@ export default function Navbar({ activeTab, setActiveTab, onOpenAuth }: NavbarPr
                 className={`flex w-full items-center space-x-3 rounded-lg px-3 py-2.5 text-sm font-medium transition text-red-400 hover:bg-red-950/20`}
               >
                 <ShieldAlert className="h-5 w-5" />
-                <span>Admin Panel</span>
+                <span>{t("Admin Panel")}</span>
+              </button>
+            )}
+            {user && (
+              <button
+                onClick={() => {
+                  logout();
+                  setIsOpen(false);
+                }}
+                className="flex w-full items-center space-x-3 rounded-lg px-3 py-2.5 text-sm font-medium transition text-rose-400 hover:bg-rose-950/20 border border-transparent hover:border-rose-900/30 mt-3"
+                id="mobile-logout-btn"
+              >
+                <LogOut className="h-5 w-5" />
+                <span>{t("Logout")}</span>
               </button>
             )}
           </div>

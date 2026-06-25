@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Translate } from '../context/LanguageContext.js';
 import { 
   ArrowRight, 
   Sparkles, 
@@ -116,7 +117,7 @@ export default function LandingPage({ onExploreSchemes, onOpenAuth, setActiveTab
           >
             <span className="inline-flex items-center space-x-2 rounded-full bg-amber-500/10 px-4 py-2 text-xs font-semibold text-amber-400 border border-amber-500/20 shadow-sm animate-pulse-glow">
               <Sparkles className="h-4 w-4 text-amber-500" />
-              <span>India's Premium Digital Welfare Platform</span>
+              <span><Translate>India's Premium Digital Welfare Platform</Translate></span>
             </span>
           </motion.div>
 
@@ -135,7 +136,7 @@ export default function LandingPage({ onExploreSchemes, onOpenAuth, setActiveTab
             transition={{ duration: 0.8, delay: 0.2 }}
             className="mx-auto max-w-2xl font-display text-lg text-amber-100/90 font-medium tracking-wide"
           >
-            "Empowering Every Citizen Through Intelligent Access To Government Welfare."
+            <Translate>Empowering Citizens with Welfare Scheme Intelligence</Translate>
           </motion.p>
 
           <motion.p 
@@ -144,7 +145,7 @@ export default function LandingPage({ onExploreSchemes, onOpenAuth, setActiveTab
             transition={{ duration: 0.8, delay: 0.3 }}
             className="mx-auto max-w-xl text-xs text-slate-400 leading-relaxed"
           >
-            Discover matching welfare options, verify required documents securely using AI OCR, and chat in native regional languages with our RAG-enhanced AI assistant.
+            <Translate>Discover welfare options, verify required documents securely using AI OCR, and chat in native regional languages with our RAG-enhanced AI assistant.</Translate>
           </motion.p>
 
           <motion.div 
@@ -160,7 +161,7 @@ export default function LandingPage({ onExploreSchemes, onOpenAuth, setActiveTab
               className="flex items-center space-x-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 px-6 py-3.5 text-xs font-bold text-slate-950 shadow-lg cursor-pointer"
               id="hero-cta-explore"
             >
-              <span>Explore Government Schemes</span>
+              <span><Translate>Explore Schemes</Translate></span>
               <ArrowRight className="h-4 w-4" />
             </motion.button>
             <motion.button
@@ -170,7 +171,7 @@ export default function LandingPage({ onExploreSchemes, onOpenAuth, setActiveTab
               className="rounded-xl border border-slate-800 bg-slate-950 px-6 py-3.5 text-xs font-semibold text-white cursor-pointer"
               id="hero-cta-signup"
             >
-              Register Citizen Profile
+              <Translate>Register Citizen Profile</Translate>
             </motion.button>
           </motion.div>
         </div>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext.js';
+import { validateVerhoeff } from '../utils/verhoeff.js';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   User, 
@@ -66,6 +67,7 @@ export default function ProfileSetupPage({ onSuccess }: ProfileSetupPageProps) {
 
   // Form states initialized with existing profile values if present
   const [fullName, setFullName] = useState(user?.fullName || '');
+  const [aadhaarNumber, setAadhaarNumber] = useState(user?.aadhaarNumber || '');
   const [age, setAge] = useState<number>(user?.profile?.age || 18);
   const [gender, setGender] = useState<'Male' | 'Female' | 'Other'>(user?.profile?.gender || 'Male');
   const [state, setState] = useState(user?.profile?.state || 'Karnataka');
@@ -112,6 +114,19 @@ export default function ProfileSetupPage({ onSuccess }: ProfileSetupPageProps) {
         setErrorMsg("Please enter your Full Name.");
         return;
       }
+      const cleanAadhaar = aadhaarNumber.replace(/[\s-]/g, '');
+      if (!cleanAadhaar) {
+        setErrorMsg("Aadhaar Identification Number is required for citizen onboarding.");
+        return;
+      }
+      if (cleanAadhaar.length !== 12 || !/^\d{12}$/.test(cleanAadhaar)) {
+        setErrorMsg("Aadhaar Number must contain exactly 12 digits.");
+        return;
+      }
+      if (!validateVerhoeff(cleanAadhaar)) {
+        setErrorMsg("Invalid Aadhaar Number: Cheksome verification failed (Verhoeff Check failed). Please enter a correct Aadhaar.");
+        return;
+      }
       if (!district) {
         setErrorMsg("Please choose your Domicile District.");
         return;
@@ -145,6 +160,7 @@ export default function ProfileSetupPage({ onSuccess }: ProfileSetupPageProps) {
     try {
       await updateProfile({
         fullName,
+        aadhaarNumber,
         age: Number(age),
         gender,
         state,
@@ -156,7 +172,7 @@ export default function ProfileSetupPage({ onSuccess }: ProfileSetupPageProps) {
         disabilityStatus,
         maritalStatus,
         familySize: Number(familySize)
-      });
+      } as any);
       
       setSuccessAnimation(true);
       setTimeout(() => {
@@ -302,6 +318,21 @@ export default function ProfileSetupPage({ onSuccess }: ProfileSetupPageProps) {
                         onChange={(e) => setFullName(e.target.value)}
                         placeholder="e.g. Ramesh Kumar"
                         className="w-full rounded-xl border border-slate-800 bg-[#090C15] px-4 py-3 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-orange-500 transition-all"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1.5">Aadhaar Identification Number (12 digits) *</label>
+                      <input
+                        type="text"
+                        value={aadhaarNumber}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/[^\d\s-]/g, '');
+                          setAadhaarNumber(val);
+                        }}
+                        placeholder="e.g. 1234 5678 9012"
+                        className="w-full rounded-xl border border-slate-800 bg-[#090C15] px-4 py-3 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-orange-500 transition-all font-mono"
                         required
                       />
                     </div>
@@ -527,6 +558,55 @@ export default function ProfileSetupPage({ onSuccess }: ProfileSetupPageProps) {
                   <p className="text-xs text-slate-400">
                     Verify that your entered indicators match official documents to avoid registration issues.
                   </p>
+
+                  {/* Citizen Verification Status Card */}
+                  <div className="rounded-xl border border-slate-800 bg-[#070913] p-5 space-y-3.5" id="verification-status-panel">
+                    <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center space-x-2">
+                      <ShieldCheck className="h-4.5 w-4.5 text-amber-500" />
+                      <span>Citizen Credentials Verification Registry</span>
+                    </h4>
+                    
+                    <div className="grid gap-3 sm:grid-cols-3 text-xs">
+                      {/* Mobile Verification */}
+                      <div className="flex items-center space-x-2.5 rounded-lg border border-slate-850 bg-slate-900/10 p-3">
+                        <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
+                        <div>
+                          <p className="font-semibold text-white">Mobile Verified</p>
+                          <p className="text-[10px] text-slate-400">✓ Mobile Number Verified</p>
+                        </div>
+                      </div>
+
+                      {/* Aadhaar Format Validation */}
+                      <div className="flex items-center space-x-2.5 rounded-lg border border-slate-850 bg-slate-900/10 p-3">
+                        {validateVerhoeff(aadhaarNumber) ? (
+                          <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
+                        ) : (
+                          <HelpCircle className="h-5 w-5 text-amber-500 shrink-0" />
+                        )}
+                        <div>
+                          <p className="font-semibold text-white">Aadhaar Format</p>
+                          <p className="text-[10px] text-slate-400 font-mono">
+                            {validateVerhoeff(aadhaarNumber) ? "✓ Aadhaar Format Valid" : "Aadhaar Invalid / Missing"}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Aadhaar OCR Document Validation */}
+                      <div className="flex items-center space-x-2.5 rounded-lg border border-slate-850 bg-slate-900/10 p-3">
+                        {user?.aadhaarDocValidated ? (
+                          <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
+                        ) : (
+                          <Info className="h-5 w-5 text-slate-500 shrink-0" />
+                        )}
+                        <div>
+                          <p className="font-semibold text-white">Document Status</p>
+                          <p className="text-[10px] text-slate-400">
+                            {user?.aadhaarDocValidated ? "✓ Aadhaar Document Validated" : "Document Not Uploaded"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
 
                   {/* Bento-style review grid */}
                   <div className="grid gap-4 sm:grid-cols-2 text-xs">

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext.js';
 import { Bot, Send, User, Loader2, Globe, Sparkles } from 'lucide-react';
+import AITranslator from './AITranslator.js';
 
 interface ChatMessage {
   id: string;
@@ -9,7 +10,11 @@ interface ChatMessage {
   timestamp: Date;
 }
 
-export default function ChatBot() {
+interface ChatBotProps {
+  currentLanguage?: string;
+}
+
+export default function ChatBot({ currentLanguage }: ChatBotProps) {
   const { token, user } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -30,6 +35,12 @@ Please choose your preferred language below to begin.`,
   const [isLoading, setIsLoading] = useState(false);
   const [prefLang, setPrefLang] = useState('English');
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (currentLanguage) {
+      setPrefLang(currentLanguage);
+    }
+  }, [currentLanguage]);
 
   const languages = ['English', 'Hindi', 'Kannada', 'Tamil', 'Telugu'];
 
@@ -164,6 +175,11 @@ Please choose your preferred language below to begin.`,
                     : 'bg-amber-500 text-slate-950 font-medium rounded-tr-sm'
                 }`}>
                   <p className="whitespace-pre-line">{m.text}</p>
+                  {isBot && prefLang !== 'English' && (
+                    <div className="mt-3 pt-2.5 border-t border-slate-800">
+                      <AITranslator textToTranslate={m.text} targetLanguage={prefLang} variant="inline" />
+                    </div>
+                  )}
                 </div>
                 <p className="text-[9px] text-slate-500">
                   {m.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
